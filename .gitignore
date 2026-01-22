@@ -1,0 +1,5 @@
+logs/
+audit/
+tmp/
+*.log
+.env
