@@ -2,9 +2,7 @@ logs/
 audit/
 tmp/
 *.log
-<<<<<<< HEAD
 .env
-=======
 *.tmp
 *.swp
 
@@ -12,5 +10,3 @@ tmp/
 .env.*
 
 .DS_Store
-
->>>>>>> 00e6f04 (Finalize zero-downtime deployment system with AI diagnosis)
