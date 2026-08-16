@@ -52,10 +52,10 @@ High-level flow:
                   current -> vX              │
                          │                   │
                          ▼                   │
-                     NGINX                  │
+                     NGINX                   │
                          │                   │
                          ▼                   │
-                    HTTP App                │
+                    HTTP App                 │
                          │                   │
                          └───────┬───────────┘
                                  ▼
