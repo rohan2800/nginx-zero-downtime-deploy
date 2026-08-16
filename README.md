@@ -226,9 +226,7 @@ The deployment runtime uses:
 ```text
 /opt/config-deploy/
 ├── releases/
-│   ├── dev/
-│   ├── staging/
-│   └── prod/
+│   └── dev/
 ├── current -> releases/<env>/<version>
 ├── previous -> releases/<env>/<previous-version>
 ├── logs/
