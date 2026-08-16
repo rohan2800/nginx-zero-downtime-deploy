@@ -1,140 +1,432 @@
-### Zero-Downtime NGINX Configuration Deployment (Linux)
+NGINX Zero-Downtime Deployment System
 
-## Overview
+A Linux-based release deployment and rollback framework for NGINX static websites, built with Bash, NGINX, systemd, Whiptail, and local AI-assisted failure diagnosis.
 
-This project implements a production-grade, Linux-native zero-downtime deployment system for NGINX configuration files.
-It uses atomic symlink switching, configuration validation, environment-specific safety controls, health checks, and automatic rollback to ensure safe deployments without interrupting live traffic.
+The project demonstrates how a Linux/DevOps engineer can implement versioned releases, atomic switching, health validation, rollback, audit logging, an interactive terminal UI, and local AI troubleshooting without depending on a large external deployment platform.
 
-The system mirrors real-world DevOps / SRE deployment patterns used in production Linux environments
+Features
 
-## Key Features
+Versioned releases — deploy v1, v2, etc. independently.
+Multi-environment structure — supports dev, staging, and prod.
+Atomic release switching — the active release is selected through symlinks.
+NGINX configuration validation — deployment validates NGINX before considering the change successful.
+Health checks — verifies the application after deployment
+Automatic rollback — failed deployments can restore the previous release.
+Manual rollback — operators can explicitly return to the previous release
+Whiptail UI — terminal-based deployment management.
+Local AI diagnosis — Ollama + llama3.2:3b analyzes collected failure evidence.
+Deployment and audit logging — operational events are recorded for troubleshooting and review.
+Linux-first implementation — primarily Bash, filesystem operations, NGINX, and systemd.
 
-- Zero-downtime NGINX reloads
-- Atomic symlink-based deployments
-- Multi-environment support (dev, staging, prod)
-- Environment-specific safety gates
-- Pre-reload NGINX configuration validation
-- HTTP health checks with auto-rollback
-- Bash-based deployment engine
-- Whiptail-based Terminal UI (TUI)
-- Deployment audit logging
+Architecture
 
-## Architecture
+High-level flow:
 
-- NGINX always reads configuration from a current symlink.
+                    ┌──────────────────────┐
+                    │     Whiptail UI      │
+                    │      scripts/ui.sh   │
+                    └──────────┬───────────┘
+                               │
+                 ┌─────────────┼─────────────┐
+                 │             │             │
+                 ▼             ▼             ▼
+              Deploy        Rollback      Health
+                 │             │          Check
+                 ▼             ▼             │
+          ┌──────────────────────────────┐   │
+          │        Release Manager       │   │
+          │       scripts/deploy.sh      │   │
+          └──────────────┬───────────────┘   │
+                         │                   │
+                         ▼                   │
+               Versioned Release             │
+             releases/<env>/<version>        │
+                         │                   │
+                         ▼                   │
+                 Atomic Symlink              │
+                  current -> vX              │
+                         │                   │
+                         ▼                   │
+                     NGINX                   │
+                         │                   │
+                         ▼                   │
+                    HTTP App                 │
+                         │                   │
+                         └───────┬───────────┘
+                                 ▼
+                           Health Check
+                                 │
+                     ┌───────────┴───────────┐
+                     │                       │
+                    PASS                   FAIL
+                     │                       │
+                     ▼                       ▼
+                  Success              Rollback
+                                             │
+                                             ▼
+                                      Previous Release
+                                             │
+                                             ▼
+                                     Failure Evidence
+                                             │
+                                             ▼
+                                      Local AI Diagnosis
+                                             │
+                                             ▼
+                                      Ollama / Llama
+
+See architecture.md for the detailed architecture, deployment lifecycle, failure handling, security considerations, and design decisions.
+
+Project Structure
+
+nginx-zero-downtime-deploy/
+├── README.md
+├── architecture.md
+├── LICENSE
+│
+├── releases/
+│   └── dev/
+│       ├── v1/
+│       │   └── site/
+│       │       └── index.html
+│       └── v2/
+│           └── site/
+│               └── index.html
+│
+└── scripts/
+    ├── deploy.sh
+    ├── rollback.sh
+    ├── health_check.sh
+    ├── ui.sh
+    │
+    └── ai/
+        └── diagnose.sh
+
+Runtime directories such as logs/ and audit/ are intentionally kept outside the source-controlled release artifacts or ignored through .gitignore.
+
+How the Deployment Works
+
+A release is stored separately from the currently active release:
+
+/opt/config-deploy/releases/dev/v1
+/opt/config-deploy/releases/dev/v2
+
+The active release is represented by:
+
+/opt/config-deploy/current
+
+For example:
+current -> /opt/config-deploy/releases/dev/v2
+
+The web root is then connected to the active release:
+/var/www/app -> /opt/config-deploy/current/site
+
+This means a deployment changes the release pointer instead of copying application files over the live site.
+
+Deployment Lifecycle
+
+1. Operator selects environment and version
+              ↓
+2. Validate release exists
+              ↓
+3. Record previous release
+              ↓
+4. Switch active release atomically
+              ↓
+5. Validate NGINX configuration
+              ↓
+6. Reload NGINX
+              ↓
+7. Run health check
+              ↓
+       ┌──────┴──────┐
+       │             │
+     PASS           FAIL
+       │             │
+       ▼             ▼
+   Deployment      Rollback
+    SUCCESS          │
+                     ▼
+              Restore previous
+                     │
+                     ▼
+              Collect evidence
+                     │
+                     ▼
+                AI diagnosis
+
+Installation / Lab Setup
+
+This project is designed for a Linux environment such as Ubuntu.
+
+Required software
+
+Linux
+Bash
+NGINX
+systemd
+curl
+Whiptail
+Git
+Ollama (optional, for AI diagnosis)
+
+Example dependency installation:
+
+sudo apt update
+sudo apt install -y nginx curl whiptail git
+
+For local AI diagnosis, install Ollama separately and make sure the configured model is available:
+ollama list
+
+The current AI script uses:
+llama3.2:3b
+
+Runtime Layout
+
+The deployment runtime uses:
 
 /opt/config-deploy/
-├── current -> releases/dev/v2
 ├── releases/
 │   ├── dev/
-│   │   └── v2/
-│   │       └── app.conf
-│   ├── staging/
-│   └── prod/
-├── scripts/
-│   └── deploy.sh
-├── ui/
-│   └── menu.sh
+├── current -> releases/<env>/<version>
+├── previous -> releases/<env>/<previous-version>
 ├── logs/
+│   └── deploy.log
 └── audit/
+    └── deploy.log
 
-## Architecture Diagram
+The NGINX application path is:
+/var/www/app
 
-                 ┌────────────┐
-                 │   Operator │
-                 │ (CLI / UI) │
-                 └─────┬──────┘
-                       │
-                       ▼
-              ┌───────────────────┐
-              │  deploy.sh (Bash) │
-              └─────┬─────────────┘
-                    │
-        ┌───────────┴────────────┐
-        ▼                        ▼
-┌─────────────────┐     ┌──────────────────┐
-│ Validate Config │     │ Health Check     │
-│  nginx -t       │     │ curl localhost   │
-└────────┬────────┘     └────────┬─────────┘
-         │                       │
-         ▼                       ▼
-┌──────────────────────────────────────────┐
-│        Atomic Symlink Switch             │
-│  current → releases/<env>/<version>      │
-└────────┬─────────────────────────────────┘
-         |   
-         ▼
-┌──────────────────┐
-│ nginx reload     │
-│ (zero downtime)  │
-└──────────────────┘
+Deploy a Release
 
-## Why symlinks?
+Direct CLI usage:
+sudo /opt/config-deploy/scripts/deploy.sh dev v1
 
-- Symlink switches are atomic on Linux
-- Instant rollback capability
-- No file copying during deployment
-- Safe even under live traffic
+Example:
+sudo /opt/config-deploy/scripts/deploy.sh dev v2
 
-## Deployment Flow
+Verify the active release:
+readlink -f /opt/config-deploy/current
 
-1) Select environment and version
-2) Validate NGINX configuration (nginx -t)
-3) Atomically switch the current symlink
-4) Reload NGINX without dropping connections
-5) Perform HTTP health check
-6) Automatically rollback on failure
-7) Log deployment result (audit trail)
+Verify the website:
+curl http://localhost:8080
 
-## Usage
+Whiptail UI
 
-# CLI Deployment
---> ./scripts/deploy.sh dev v1
+Start the interactive interface:
+cd /opt/config-deploy
+./scripts/ui.sh
 
-# Terminal UI (TUI)
---> ./ui/menu.sh
+The UI provides:
 
-## Environments
+1  Deploy Release
+2  Rollback Release
+3  Health Check
+4  AI Failure Diagnosis
+5  View Deployment Logs
+6  Exit
 
-| Environment | Port | Safety Controls      |
-| ----------- | ---- | -------------------- |
-| dev         | 8080 | Fast deploy          |
-| staging     | 8081 | Validation           |
-| prod        | 80   | Confirmation + delay |
+This keeps common operational tasks accessible without requiring the operator to remember every script argument.
 
-## Safety Mechanisms
+Rollback
 
-- Configuration validation before reload
-- Environment-specific rules
-- Automatic rollback on health-check failure
-- Least-privilege sudo access for reload commands
-- Deployment audit logging 
+Manual rollback:
+sudo /opt/config-deploy/scripts/rollback.sh
 
-## Tech Stack
+The rollback mechanism restores the previous active release rather than rebuilding or copying the application.
 
-1) Linux
-2) Bash
-3) NGINX
-4) systemd
-5) curl
-6) Whiptail
-7) Git
+Verify:
+readlink -f /opt/config-deploy/current
 
-## Why This Project Matters
+Health Check
 
-- Demonstrates real Linux system design
-- Shows understanding of zero-downtime deployment strategies
-- Focuses on safety, observability, and rollback
-- Avoids heavy abstractions to highlight core Linux skills
-- Highly relevant for Linux Administrator and DevOps roles
+Run manually:
+/opt/config-deploy/scripts/health_check.sh
 
-# Example Commands
+The deployment workflow uses the health check as a post-deployment validation gate.
 
-- readlink /opt/config-deploy/current
-- nginx -t
-- systemctl is-active nginx
-- curl http://localhost:8080
+A deployment should only be considered successful when the release is active and the health check passes.
 
-## Author
+AI Failure Diagnosis
+
+The AI feature is intentionally advisory.
+
+Failure evidence is collected into:
+/tmp/config-deploy-ai-evidence.log
+
+The diagnosis script is:
+/opt/config-deploy/scripts/ai/diagnose.sh
+
+Example:
+/opt/config-deploy/scripts/ai/diagnose.sh \
+    /tmp/config-deploy-ai-evidence.log
+
+The local model is:
+llama3.2:3b
+
+The AI is instructed to return:
+
+ROOT CAUSE
+EVIDENCE
+SEVERITY
+RECOMMENDED ACTION
+ROLLBACK
+
+Why AI is advisory
+
+AI should not directly execute production remediation.
+
+The deployment system remains deterministic:
+Bash → validation → health check → rollback
+
+AI provides:
+evidence analysis → diagnosis → recommendation
+
+This separation reduces the risk of an incorrect model response changing production state.
+
+Logging and Audit
+
+Operational deployment logs:
+/opt/config-deploy/logs/deploy.log
+
+Audit records:
+/opt/config-deploy/audit/deploy.log
+
+These are useful for:
+troubleshooting
+deployment history
+rollback investigation
+interview demonstrations
+operational auditing
+Security Considerations
+
+This is a Linux deployment lab/project and should be hardened before production use.
+
+Recommended production improvements include:
+
+least-privilege sudo rules
+dedicated deployment service account
+restricted filesystem permissions
+authenticated monitoring
+secrets management
+signed releases
+immutable artifacts
+centralized logging
+systemd service isolation
+NGINX security headers
+TLS/HTTPS
+stronger health checks
+deployment locking to prevent concurrent deployments
+
+The AI component should remain isolated from privileged command execution.
+
+Limitations
+
+This implementation intentionally stays focused on Linux fundamentals and deployment automation.
+
+Current limitations include:
+
+local filesystem-based release storage
+single-host deployment model
+basic HTTP health validation
+local Ollama dependency for AI diagnosis
+no distributed locking
+no artifact repository
+no multi-node NGINX cluster
+no external secrets manage
+no production-grade observability stack
+
+These limitations are opportunities for future iterations.
+
+Future Improvements
+
+Potential next versions:
+
+Infrastructure
+Terraform-based infrastructure provisioning
+AWS deployment
+Load balancer integration
+multiple NGINX nodes
+
+CI/CD
+GitHub Actions
+Jenkins pipeline
+automated testing
+image/artifact versioning
+security scanning with Trivy
+
+Observability
+Prometheus
+Grafana
+centralized logging
+deployment metrics
+alerting
+
+AI
+structured JSON diagnosis
+confidence score
+historical failure correlation
+log summarization
+retrieval from previous incidents
+AI should remain a recommendation layer rather than an unrestricted execution agent.
+
+DevOps Concepts Demonstrated
+
+This project demonstrates practical understanding of:
+
+Linux filesystem management
+
+Bash scripting
+
+process exit codes
+
+permissions
+
+symbolic links
+
+atomic operations
+
+NGINX
+
+systemd
+
+service reloads
+
+health checks
+
+rollback strategies
+
+environment separation
+
+release versioning
+
+logging
+
+audit trails
+
+terminal UI design
+
+local AI integration
+
+Git/GitHub workflow
+
+Example Deployment
+
+Initial state:
+current -> v1
+website  -> Version 1
+
+Deploy v2:
+current -> v2
+website  -> Version 2
+
+If v2 fails health check:
+current -> v1
+website  -> Version 1
+
+The key idea is that the system changes the release pointer, not the contents of the live application directory.
+
+Author
 Rohan Waghmare
-Aspiring Linux / DevOps Engineer
+DevOps / Cloud Engineering Portfolio Project
